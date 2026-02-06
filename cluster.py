@@ -269,7 +269,7 @@ def main():
         train_loader = DataLoader(TensorDataset(X[train_idx], Y[train_idx]), batch_size=64, shuffle=True)
 
         optimizer = optim.Adam(model.parameters(), lr=0.001)
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         for epoch in range(30):
             model.train()
             l_sum = 0
