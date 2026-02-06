@@ -333,13 +333,13 @@ def main():
         train_loader = DataLoader(TensorDataset(X[train_idx], Y[train_idx]), batch_size=64, shuffle=True)
 
         optimizer = optim.Adam(model.parameters(), lr=0.001)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.2)
         criterion = nn.CrossEntropyLoss()
-        for epoch in range(50):
+        for epoch in range(53):
             model.train()
             l_sum = 0
             # Loop twice per epoch: once for clean ground truth, once for augmented shifts
-            # for augmented_pass in [False, True]:
-            for augmented_pass in [False]:
+            for augmented_pass in [False, True]:
                 for xb, yb in train_loader:
                     xb, yb = xb.to(device), yb.to(device)
                     if augmented_pass:
@@ -348,7 +348,9 @@ def main():
                         xb = torch.roll(xb, shifts=(shift_y, shift_x), dims=(2, 3))
                     optimizer.zero_grad(); loss = criterion(model(xb), yb)
                     loss.backward(); optimizer.step(); l_sum += loss.item()
-            log(f"Epoch {epoch+1:02d} | Loss: {l_sum/(2*len(train_loader)):.4f}")
+            scheduler.step()
+            curr_lr = optimizer.param_groups[0]['lr']
+            log(f"Epoch {epoch+1:02d} | Loss: {l_sum/(2*len(train_loader)):.4f} | LR: {curr_lr:.5f}")
 
         # Save Weights
         torch.save(model.state_dict(), WEIGHTS_PATH)
