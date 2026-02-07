@@ -290,6 +290,7 @@ def show_outliers(
 ):
     fig, axes = plt.subplots(6, 11, figsize=(18, 11))
     ax_f = axes.flatten()
+    overall_max_mse = 0.0
     for i, char in enumerate(ALPHABET):
         mask = labels == i
         indices = np.where(mask)[0]
@@ -303,6 +304,8 @@ def show_outliers(
         ref_float = avg_img.astype(float)
         mse = np.mean((subset_cells - ref_float) ** 2, axis=(1, 2))
         worst_idx_in_group = np.argmax(mse)
+        max_mse_val = mse[worst_idx_in_group]
+        overall_max_mse = max(overall_max_mse, max_mse_val)
         global_idx = indices[worst_idx_in_group]
         outlier_img = visuals[global_idx]
 
@@ -317,7 +320,7 @@ def show_outliers(
         combined[:, :32] = avg_img
         combined[:, 33:65] = outlier_img
         ax_f[i].imshow(combined, cmap="magma")
-        ax_f[i].set_title(f"'{char}' ({line},{col}){meta}", fontsize=7)
+        ax_f[i].set_title(f"'{char}' n={len(indices)} ({line},{col}){meta}", fontsize=7)
         ax_f[i].axis("off")
     plt.suptitle(title, fontsize=16)
     plt.tight_layout()
@@ -326,6 +329,7 @@ def show_outliers(
         plt.close(fig)
     else:
         plt.show()
+    return overall_max_mse
 
 
 def main():
@@ -347,6 +351,10 @@ def main():
         "--lines", type=int, default=65, help="Total grid lines in image"
     )
     args = parser.parse_args()
+
+    log(f"Input: {args.image}")
+    if args.output:
+        log(f"Output: {args.output}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SimpleCNN(CLUSTERS).to(device)
@@ -401,13 +409,14 @@ def main():
 
         ground_truth_averages = calculate_bucket_averages(all_gt_visuals, all_gt_labels)
         if args.debug:
-            show_outliers(
+            max_dev = show_outliers(
                 all_gt_visuals,
                 all_gt_labels,
                 ground_truth_averages,
                 "TRAINING TYPO CHECK: Avg vs Max Outlier",
                 indices_map=all_gt_indices
             )
+            log(f"Max bucket deviation: {max_dev:.2f}")
 
         X = torch.tensor(all_gt_visuals, dtype=torch.float32).unsqueeze(1) / 255.0
         Y = torch.tensor(all_gt_labels, dtype=torch.long)
@@ -489,13 +498,14 @@ def main():
             if (not args.train_path and args.output)
             else None
         )
-        show_outliers(
+        max_dev = show_outliers(
             visuals,
             pred_indices,
             inf_averages,
             "Inference Results: Max Outliers",
             save_path=pf_path,
         )
+        log(f"Max bucket deviation: {max_dev:.2f}")
 
 
 if __name__ == "__main__":
