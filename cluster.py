@@ -295,8 +295,14 @@ def calculate_bucket_averages(visuals, labels):
 def show_outliers(
     visuals, labels, ref_averages, title, model_preds=None, save_path=None, indices_map=None
 ):
-    fig, axes = plt.subplots(6, 11, figsize=(18, 11))
+    n_cols = 11
+    n_rows = (CLUSTERS + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, n_rows * 1.83))
     ax_f = axes.flatten()
+    # Pre-disable all subplots to handle empty slots in the grid
+    for a in ax_f:
+        a.axis("off")
+
     overall_max_mse = 0.0
     for i, char in enumerate(ALPHABET):
         mask = labels == i
