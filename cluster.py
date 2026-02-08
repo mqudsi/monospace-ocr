@@ -6,6 +6,7 @@ import sys
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as tf
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
@@ -504,11 +505,16 @@ def main():
                 for xb, yb in train_loader:
                     xb, yb = xb.to(device), yb.to(device)
                     if augmented_pass:
-                        shift_x = random.randint(-1, 1)
-                        shift_y = random.randint(-1, 1)
-                        # shift_x = random.randint(-2, 2)
-                        # shift_y = random.randint(-2, 2)
-                        xb = torch.roll(xb, shifts=(shift_y, shift_x), dims=(2, 3))
+                        shift_x = random.uniform(-2.0, 2.0)
+                        shift_y = random.uniform(-2.0, 2.0)
+                        N, C, H, W = xb.size()
+                        theta = torch.tensor([[
+                            [1, 0, -2 * shift_x / W],
+                            [0, 1, -2 * shift_y / H]
+                        ]], device=xb.device).repeat(N, 1, 1)
+
+                        grid = tf.affine_grid(theta, xb.size(), align_corners=False)
+                        xb = tf.grid_sample(xb, grid, align_corners=False)
                     optimizer.zero_grad()
                     loss = criterion(model(xb), yb)
                     loss.backward()
