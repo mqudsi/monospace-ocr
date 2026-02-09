@@ -29,7 +29,7 @@ def set_seed(seed=42):
 
 set_seed(42)
 
-ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/> "
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/> -\":;=."
 CLUSTERS = len(ALPHABET)
 EXPECTED_COLS = 78
 TARGET_CELL_SIZE = (32, 32)
