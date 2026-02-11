@@ -93,9 +93,10 @@ class YOLO_OCR:
 
             for j, char in enumerate(text):
                 char_w = font.getlength(char)
-                # Use minimum bbox width for thin chars like 1l/i
-                # They seem to default to ~4px
-                char_w = max(char_w, 6)
+                if not self.fine_tune:
+                    # Use minimum bbox width for thin chars like 1l/i
+                    # They seem to default to ~4px
+                    char_w = max(char_w, 6)
 
                 # Bounding Box (Normalized)
                 x_center = (curr_x + char_w / 2) / CANVAS_W
