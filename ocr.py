@@ -1,5 +1,4 @@
 #!/usr/bin/env -S uv.exe run
-from concurrent.futures import ProcessPoolExecutor
 import os
 import argparse
 import cv2
@@ -54,7 +53,7 @@ class YOLO_OCR:
             return
 
         debug = False
-        def generate_sample(i):
+        for i in range(count):
             # Create base canvas
             img = Image.new("RGB", (CANVAS_W, CANVAS_H), (255, 255, 255))
             draw = ImageDraw.Draw(img)
@@ -65,7 +64,11 @@ class YOLO_OCR:
             # random.triangular(low, high, mode)
             # text_len = int(random.triangular(10, 85, 72))
             # text_len = int(10 + (80-10) * random.betavariate(2, 1))
-            text_len = int(80 - (random.random() ** 2 * 85))
+            text_len = int(80 - (random.random() ** 2 * 60))
+
+            # 1% of the time, generate only single characters
+            if random.random() < 0.021:
+                text_len = 1
 
             # 40% of the time, fill at least 30% of the slots with confusable characters
             if True and random.random() < 0.65:
@@ -100,14 +103,14 @@ class YOLO_OCR:
             draw.text((curr_x, curr_y), text, font=font, fill=(0, 0, 0))
 
             # Extract the character bounding boxes for training/val data
-            for i, char in enumerate(text):
+            for j, char in enumerate(text):
                 if char.isspace():
                     continue
 
                 # Assume the position of character x is the length of the
                 # entire string up to and including x, minus the length
                 # of x itself.
-                prefix_len = font.getlength(text[: i + 1])
+                prefix_len = font.getlength(text[: j + 1])
                 char_len = font.getlength(char)
                 char_start = curr_x + (prefix_len - char_len)
 
@@ -152,6 +155,7 @@ class YOLO_OCR:
             # Save (at slightly lower resolution when fine-tuning)
             name = f"{split}_{i:05d}"
             img_path = os.path.join(img_dir, f"{name}.jpg")
+
             if not self.fine_tune:
                 # default quality is 75!?
                 img.save(img_path, "JPEG", quality=95)
@@ -160,10 +164,6 @@ class YOLO_OCR:
 
             with open(os.path.join(lbl_dir, f"{name}.txt"), "w") as f:
                 f.write("\n".join(labels))
-
-        if __name__ == "__main__":
-            with ProcessPoolExecutor() as executor:
-                executor.map(generate_sample, range(count))
 
     # --- PART 2: TRAINING ---
     def train(self):
