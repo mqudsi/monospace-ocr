@@ -74,6 +74,10 @@ class YOLO_OCR:
             total_w = font.getlength(text)
             curr_x = (CANVAS_W - total_w) // 2
             curr_y = (CANVAS_H - FONT_SIZE) // 2
+            # Introduce a slight shift to curr_y
+            curr_y += random.randint(-8, 8)
+            if text_len < 70:
+                curr_x -= random.randint(0, 60)
 
             labels = []
             ascent, descent = font.getmetrics()
