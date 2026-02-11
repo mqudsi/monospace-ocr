@@ -144,13 +144,16 @@ def normalize_character_soft(raw_cell, h_step):
     target_y = 32 - nh - 2
     target_x = (32 - nw) // 2
 
-    if target_y < 0: target_y = 0
-    if target_y + nh > 32: nh = 32 - target_y
+    if target_y < 0:
+        target_y = 0
+    if target_y + nh > 32:
+        nh = 32 - target_y
 
     # Place the cropped character onto the black canvas
     canvas[target_y : target_y + nh, target_x : target_x + nw] = resized[:nh, :nw]
 
     return canvas
+
 
 def solve_grid_2d(img, gx, gy, gw, gh, num_lines):
     def score_axis(projection, n_segments, start_guess, dim_guess):
