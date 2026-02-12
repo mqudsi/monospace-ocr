@@ -33,12 +33,37 @@ ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=> -
 CLUSTERS = len(ALPHABET)
 EXPECTED_COLS = 78
 TARGET_CELL_SIZE = (32, 32)
-WEIGHTS_PATH = "./weights"
+WEIGHTS_PATH = "./weights_file"
 CONFIG_PATH = "./grid_config.json"
+CHECKPOINT_PATH = "./checkpoint.pt"
 
 
 def log(msg):
     print(msg, file=sys.stderr, flush=True)
+
+
+def save_checkpoint(model, optimizer, scheduler, epoch, loss):
+    """Save training checkpoint"""
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'loss': loss,
+    }, CHECKPOINT_PATH)
+    log(f"Checkpoint saved at epoch {epoch}")
+
+def load_checkpoint(model, optimizer, scheduler):
+    """Load training checkpoint if exists. Returns starting epoch."""
+    if os.path.exists(CHECKPOINT_PATH):
+        checkpoint = torch.load(CHECKPOINT_PATH)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        log(f"Resumed from checkpoint epoch {start_epoch}")
+        return start_epoch
+    return 0
 
 
 class SimpleCNN(nn.Module):
@@ -529,7 +554,15 @@ def main():
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.2)
         criterion = nn.CrossEntropyLoss()
-        for epoch in range(53):
+        
+        # Load checkpoint if exists
+        start_epoch = load_checkpoint(model, optimizer, scheduler)
+        
+        for epoch in range(start_epoch, 53):
+            # Save checkpoint at start of each epoch (except first if just loaded)
+            if epoch > start_epoch:
+                save_checkpoint(model, optimizer, scheduler, epoch, l_sum)
+            
             model.train()
             l_sum = 0
             # Loop twice per epoch: once for clean ground truth, once for augmented shifts
