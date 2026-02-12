@@ -4,8 +4,10 @@ import argparse
 import cv2
 import json
 import numpy as np
+import random
 import sys
 import torch
+from multiprocess import Pool
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from ultralytics import YOLO
 
@@ -21,6 +23,9 @@ DATASET_DIR = "ocr_dataset"
 # MODEL_NAME = "yolo11n.pt" # Latest YOLO version
 MODEL_NAME = "yolo26n.pt"  # Latest YOLO version
 
+# The shared font resource for each multiprocess worker when generating
+# training and validation data.
+worker_font = None
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -30,6 +35,11 @@ def load_font():
         return ImageFont.truetype(FONT_PATH, FONT_SIZE)
     except:
         print("Font file not found. Please check FONT_PATH.")
+
+def init_gen_worker():
+    """Runs once when each multiprocess worker starts to init worker resources"""
+    global worker_font
+    worker_font = load_font()
 
 def generate_rand_text():
     # Generate random text, oversampling tricky characters
@@ -147,30 +157,37 @@ class YOLO_OCR:
 
     # --- PART 1: DATA GENERATION ---
     def generate_data(self, count=1000, split="train"):
-        print(f"Generating {count} samples for {split}...")
+        print(f"Generating {count} samples for {split} with {os.cpu_count()} workers...")
+        is_fine_tune = self.fine_tune
         img_dir = os.path.join(DATASET_DIR, split, "images")
         lbl_dir = os.path.join(DATASET_DIR, split, "labels")
         os.makedirs(img_dir, exist_ok=True)
         os.makedirs(lbl_dir, exist_ok=True)
 
-        font = load_font()
-
-        for i in range(count):
+        # Generate and save a single train/val image/label pair.
+        def inner(i):
             text = generate_rand_text()
-            img, labels = generate_sample(text, font)
+            img, labels = generate_sample(text, font=worker_font)
 
             # Save (at slightly lower resolution when fine-tuning)
             fname = f"{split}_{i:05d}"
             img_path = os.path.join(img_dir, f"{fname}.jpg")
+            lbl_path = os.path.join(lbl_dir, f"{fname}.txt")
 
-            if not self.fine_tune:
+            if not is_fine_tune:
                 # default quality is 75!?
                 img.save(img_path, "JPEG", quality=95)
             else:
                 img.save(img_path, "JPEG", quality=random.randint(85, 95))
 
-            with open(os.path.join(lbl_dir, f"{fname}.txt"), "w") as f:
+            with open(lbl_path, "w") as f:
                 f.write("\n".join(labels))
+
+        with Pool(
+            processes=os.cpu_count(),
+            initializer=init_gen_worker,
+        ) as executor:
+            executor.map(inner, range(count))
 
     # --- PART 2: TRAINING ---
     def train(self):

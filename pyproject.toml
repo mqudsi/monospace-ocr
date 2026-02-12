@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "matplotlib>=3.10.8",
+    "multiprocess>=0.70.19",
     "opencv-contrib-python>=4.13.0.92",
     "opencv-python>=4.13.0.92",
     "scikit-image>=0.26.0",
