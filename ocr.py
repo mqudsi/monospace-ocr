@@ -15,7 +15,7 @@ ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 CHAR_TO_IDX = {char: i for i, char in enumerate(ALPHABET)}
 IDX_TO_CHAR = {i: char for char, i in CHAR_TO_IDX.items()}
 
-FONT_PATH = "times.ttf"  # Update path for Linux/Mac if necessary
+FONT_PATH = "/usr/local/lib/python3.12/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSansMono.ttf"  # Update path for Linux/Mac if necessary
 FONT_SIZE = 16
 CANVAS_W, CANVAS_H = 800, 64
 DATASET_DIR = "ocr_dataset"
@@ -158,12 +158,10 @@ class YOLO_OCR:
             else:
                 img.save(img_path, "JPEG", quality=random.randint(85, 95))
 
-            with open(os.path.join(lbl_dir, f"{name}.txt"), "w") as f:
-                f.write("\n".join(labels))
-
-        if __name__ == "__main__":
-            with ProcessPoolExecutor() as executor:
-                executor.map(generate_sample, range(count))
+        with open(os.path.join(lbl_dir, f"{name}.txt"), "w") as f:
+            f.write("\n".join(labels))
+with ProcessPoolExecutor() as executor:
+    executor.map(generate_sample, range(count))
 
     # --- PART 2: TRAINING ---
     def train(self):
