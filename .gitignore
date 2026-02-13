@@ -5,3 +5,8 @@ target/
 grid_config.json
 weights
 EFTA*-0*.txt
+ocr_dataset/
+runs/
+__pycache__/
+*.pt
+train.log
