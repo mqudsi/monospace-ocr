@@ -6,6 +6,7 @@ import cv2
 import json
 import numpy as np
 import random
+import subprocess
 import sys
 import torch
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -16,7 +17,49 @@ ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 CHAR_TO_IDX = {char: i for i, char in enumerate(ALPHABET)}
 IDX_TO_CHAR = {i: char for char, i in CHAR_TO_IDX.items()}
 
-FONT_PATH = "/usr/local/lib/python3.12/dist-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSansMono.ttf"  # Update path for Linux/Mac if necessary
+_FALLBACK_FONT_PATHS = [
+    "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/cour.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+]
+
+
+def _discover_font_paths():
+    wanted = {
+        "courier new",
+        "liberation mono",
+        "dejavu sans mono",
+    }
+
+    try:
+        p = subprocess.run(
+            ["fc-list", "-f", "%{family}\t%{file}\n"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+    except Exception:
+        return list(_FALLBACK_FONT_PATHS)
+
+    paths = []
+    seen = set()
+    for line in p.stdout.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        fam, fpath = parts[0].strip().lower(), parts[1].strip()
+        if not fpath or fpath in seen:
+            continue
+        if any(w in fam for w in wanted):
+            paths.append(fpath)
+            seen.add(fpath)
+
+    return paths if paths else list(_FALLBACK_FONT_PATHS)
+
+
+FONT_PATHS = _discover_font_paths()
 FONT_SIZE = 16
 CANVAS_W, CANVAS_H = 800, 64
 DATASET_DIR = "ocr_dataset"
@@ -30,10 +73,16 @@ def eprint(*args, **kwargs):
 
 def _generate_ocr_sample(args):
     i, split, img_dir, lbl_dir, fine_tune, debug = args
-    try:
-        font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    except Exception:
-        print("Font file not found. Please check FONT_PATH.")
+    font = None
+    for fp in random.sample(FONT_PATHS, k=len(FONT_PATHS)):
+        try:
+            font = ImageFont.truetype(fp, FONT_SIZE)
+            break
+        except Exception:
+            pass
+
+    if font is None:
+        print("Font file not found. Please check FONT_PATHS.")
         return
 
     # Create base canvas
@@ -166,7 +215,7 @@ class YOLO_OCR:
                 pass
 
     # --- PART 2: TRAINING ---
-    def train(self):
+    def train(self, epochs=100, patience=30):
         # Create YAML
         yaml_path = os.path.join(DATASET_DIR, "data.yaml")
         with open(yaml_path, "w") as f:
@@ -179,7 +228,8 @@ class YOLO_OCR:
         train_args = {
             "device": self.device,
             "data": yaml_path,
-            "epochs": 100,
+            "epochs": int(epochs),
+            "patience": int(patience),
             "batch": 48,
             "imgsz": 1600,
             "rect": True,
@@ -199,7 +249,8 @@ class YOLO_OCR:
         # Override certain args when fine tuning
         fine_tune_args = (
             {
-                "epochs": 50,  # or 30
+                "epochs": min(int(epochs), 50),  # or 30
+                "patience": int(patience),
                 "warmup_epochs": 0,
                 "pretrained": True,
             }
@@ -219,7 +270,7 @@ class YOLO_OCR:
         inv = cv2.bitwise_not(gray)
 
         # Slightly denoise input and use that to find text margins
-        _, mask = cv2.threshold(inv, 10, 255, cv2.THRESH_BINARY)
+        _, mask = cv2.threshold(inv, 30, 255, cv2.THRESH_BINARY)
         coords = cv2.findNonZero(mask)
         if coords is None:
             return "No text found"
@@ -229,7 +280,7 @@ class YOLO_OCR:
 
         # Use horizontal ink projection to detect line boundaries
         line_sums = np.sum(text_area, axis=1)
-        line_indices = np.where(line_sums > 0)[0]
+        line_indices = np.where(line_sums > 255 * 4)[0]
 
         if len(line_indices) == 0:
             return ""
@@ -239,7 +290,7 @@ class YOLO_OCR:
         if len(line_indices) > 0:
             start = line_indices[0]
             for i in range(1, len(line_indices)):
-                if line_indices[i] > line_indices[i - 1] + 2:  # 2px gap threshold
+                if line_indices[i] > line_indices[i - 1] + 6:  # 6px gap threshold
                     lines.append((start, line_indices[i - 1]))
                     start = line_indices[i]
             lines.append((start, line_indices[-1]))
@@ -251,52 +302,61 @@ class YOLO_OCR:
             # Convert back to black on white
             line_img = cv2.bitwise_not(line_img)
 
-            # Center into 800x64 canvas
-            canvas = np.full((CANVAS_H, CANVAS_W), 255, dtype=np.uint8)
             h, w = line_img.shape
-            # Scale down if too wide, otherwise just center
-            if w > CANVAS_W:
-                w = CANVAS_W
-                line_img = line_img[:, :CANVAS_W]
-            if h > CANVAS_H:
-                h = CANVAS_H
-                line_img = line_img[:CANVAS_H, :]
-
-            offset_x = (CANVAS_W - w) // 2
-            offset_y = (CANVAS_H - h) // 2
-            canvas[offset_y : offset_y + h, offset_x : offset_x + w] = line_img
-            canvas_bgr = cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
-
-            # Debug
-            # cv2.imwrite(f"debug_canvas-{y1}.png", canvas)
-
-            # Predict, returing even low confidence items
-            results = self.model.predict(
-                canvas_bgr,
-                imgsz=1600,
-                conf=0.05,
-                verbose=False,
-                end2end=False,
-                iou=0.1,
-            )
-
-            # # This creates a BGR image with boxes and labels drawn on it
-            # annotated_frame = results[0].plot()
-            #
-            # # Save or display it
-            # cv2.imwrite(f"detected_line.jpg", annotated_frame)
-
-            # print(results[0].probs)
             # Extract and sort by X-coordinate
             raw_boxes = []
-            for box in results[0].boxes:
-                raw_boxes.append(
-                    {
-                        "char": IDX_TO_CHAR[int(box.cls[0].item())],
-                        "conf": box.conf.item(),
-                        "x": box.xywh[0][0].item(),
-                    }
+
+            # If the line is wider than the canvas, run sliding-window inference to avoid
+            # shrinking characters (which hurts l/1 disambiguation).
+            tile_overlap = 64
+            tile_stride = max(1, CANVAS_W - tile_overlap)
+            x_starts = [0]
+            if w > CANVAS_W:
+                x_starts = list(range(0, w, tile_stride))
+                if x_starts and x_starts[-1] + CANVAS_W < w:
+                    x_starts.append(w - CANVAS_W)
+
+            for x0 in x_starts:
+                crop = line_img[:, x0 : x0 + CANVAS_W]
+                ch, cw = crop.shape
+
+                # Center crop into 800x64 canvas (height might exceed 64 in some scans)
+                canvas = np.full((CANVAS_H, CANVAS_W), 255, dtype=np.uint8)
+                if ch > CANVAS_H:
+                    scale = CANVAS_H / ch
+                    new_h = CANVAS_H
+                    new_w = max(1, int(round(cw * scale)))
+                    crop = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                    ch, cw = crop.shape
+
+                offset_x = (CANVAS_W - cw) // 2
+                offset_y = (CANVAS_H - ch) // 2
+                canvas[offset_y : offset_y + ch, offset_x : offset_x + cw] = crop
+                canvas_bgr = cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
+
+                # Predict, returing even low confidence items
+                results = self.model.predict(
+                    canvas_bgr,
+                    imgsz=1600,
+                    conf=0.05,
+                    verbose=False,
+                    end2end=False,
+                    iou=0.1,
                 )
+
+                for box in results[0].boxes:
+                    # Map x coordinate back into full line coordinate system
+                    x = box.xywh[0][0].item() - offset_x + x0
+                    raw_boxes.append(
+                        {
+                            "char": IDX_TO_CHAR[int(box.cls[0].item())],
+                            "conf": box.conf.item(),
+                            "x": x,
+                        }
+                    )
+
+            if not raw_boxes:
+                continue
 
             raw_boxes.sort(key=lambda b: b["x"])
             # eprint(json.dumps(boxes))
@@ -332,7 +392,31 @@ if __name__ == "__main__":
     parser.add_argument(
         "--generate", action="store_true", help="Generate synthetic data"
     )
+    parser.add_argument(
+        "--train-count",
+        type=int,
+        default=5000,
+        help="Number of synthetic training samples to generate",
+    )
+    parser.add_argument(
+        "--val-count",
+        type=int,
+        default=1000,
+        help="Number of synthetic validation samples to generate",
+    )
     parser.add_argument("--train", action="store_true", help="Train the model")
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=100,
+        help="Training epochs (use with --train)",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=30,
+        help="Early-stopping patience in epochs (use with --train)",
+    )
     parser.add_argument("--predict", type=str, help="Path to image for inference")
     parser.add_argument(
         "--model",
@@ -350,11 +434,11 @@ if __name__ == "__main__":
     ocr = YOLO_OCR(m_path)
 
     if args.generate:
-        ocr.generate_data(count=5000, split="train")
-        ocr.generate_data(count=1000, split="val")
+        ocr.generate_data(count=args.train_count, split="train")
+        ocr.generate_data(count=args.val_count, split="val")
 
     if args.train:
-        ocr.train()
+        ocr.train(epochs=args.epochs, patience=args.patience)
 
     if args.predict:
         result = ocr.process_document(args.predict)
