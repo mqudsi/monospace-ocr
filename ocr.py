@@ -274,7 +274,7 @@ class YOLO_OCR:
         self.model.train(**(train_args | fine_tune_args))
 
     # --- PART 3: INFERENCE & DOCUMENT PROCESSING ---
-    def process_document(self, image_path):
+    def process_document(self, image_path, conf=0.05, iou=0.1):
         import cv2
 
         import numpy as np
@@ -355,10 +355,10 @@ class YOLO_OCR:
                 results = self.model.predict(
                     canvas_bgr,
                     imgsz=1600,
-                    conf=0.05,
+                    conf=float(conf),
                     verbose=False,
                     end2end=False,
-                    iou=0.1,
+                    iou=float(iou),
                 )
 
                 for box in results[0].boxes:
@@ -440,6 +440,18 @@ if __name__ == "__main__":
         default=None,
         help="Use a single font file for synthetic data generation (e.g. Courier_New.ttf)",
     )
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.05,
+        help="YOLO confidence threshold for inference (use with --predict)",
+    )
+    parser.add_argument(
+        "--iou",
+        type=float,
+        default=0.1,
+        help="YOLO IoU threshold for inference (use with --predict)",
+    )
     parser.add_argument("--predict", type=str, help="Path to image for inference")
     parser.add_argument(
         "--model",
@@ -478,6 +490,6 @@ if __name__ == "__main__":
             ocr.train(epochs=args.epochs, patience=args.patience)
 
         if args.predict:
-            result = ocr.process_document(args.predict)
+            result = ocr.process_document(args.predict, conf=args.conf, iou=args.iou)
             eprint("\n--- OCR RESULTS ---\n")
             print(result)

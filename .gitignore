@@ -10,3 +10,6 @@ runs/
 __pycache__/
 *.pt
 train.log
+importtime.log
+weights_file
+test_gen.py
