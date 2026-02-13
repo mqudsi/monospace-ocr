@@ -42,7 +42,12 @@ def _generate_ocr_sample(args):
 
     # Generate random text, oversampling tricky characters
     hard_chars = "ijlI1t/f"
-    text_len = int(80 - (random.random() ** 2 * 85))
+    text_len = int(80 - (random.random() ** 2 * 60))
+
+    if random.random() < 0.021:
+        text_len = 1
+
+    text_len = max(1, text_len)
 
     # 40% of the time, fill at least 30% of the slots with confusable characters
     if True and random.random() < 0.65:
