@@ -23,3 +23,62 @@ In training runs with `-d`/`--debug`, generates a debug view that lets you see i
 In inference runs, generates a debug view (when `-d` is in use with no `-q`/`--quiet`) that shows the max outliers compared to the rest of the characters in the image. When `-o`/`--output` is specified, the debug view is saved to `<basename>-proof.png` so you can inspect it later.
 
 ![Post-inference analysis](./img/inference-analysis.png)
+
+### `ocr.py` (YOLO-based OCR pipeline)
+
+This repo also contains a newer pipeline in `ocr.py` that:
+
+- **Generates synthetic training data** (YOLO detection labels for characters).
+- **Trains an Ultralytics YOLO model** for character detection.
+- **Runs OCR on page images** (including wide-line sliding window inference).
+
+#### Fonts
+
+Synthetic generation uses **installed system fonts** discovered at runtime via `fc-list` and samples randomly per training image.
+It targets these families when available:
+
+- Courier New
+- Liberation Mono
+- DejaVu Sans Mono
+
+If `fc-list` is unavailable or returns no matches, `ocr.py` falls back to a small list of common font file paths.
+
+#### Dataset generation
+
+```bash
+python ocr.py --generate --train-count 20000 --val-count 2000
+```
+
+Arguments:
+
+- `--train-count`
+  Number of synthetic training images to generate (default: 5000)
+- `--val-count`
+  Number of synthetic validation images to generate (default: 1000)
+
+#### Training
+
+Quick sanity check:
+
+```bash
+python ocr.py --train --epochs 2 --patience 1
+```
+
+Long run with early stopping:
+
+```bash
+python ocr.py --train --epochs 300 --patience 30
+```
+
+Arguments:
+
+- `--epochs`
+  Maximum training epochs (default: 100)
+- `--patience`
+  Early-stopping patience in epochs (default: 30)
+
+#### Inference
+
+```bash
+python ocr.py --predict /path/to/page.png --model runs/detect/train/weights/best.pt
+```
