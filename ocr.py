@@ -22,8 +22,8 @@ IDX_TO_CHAR = {i: char for char, i in CHAR_TO_IDX.items()}
 # FONT_PATH = "./texgyretermes-regular.otf"
 FONT_PATHS = [
     "times.ttf",
-    "./NimbusRomNo9L-Reg.otf",
-    "./texgyretermes-regular.otf",
+    "./fonts/NimbusRomNo9L-Reg.otf",
+    "./fonts/texgyretermes-regular.otf",
 ]
 FONT_SIZE = 16
 CANVAS_W, CANVAS_H = 800, 64
