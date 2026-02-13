@@ -2,15 +2,11 @@
 from concurrent.futures import ProcessPoolExecutor
 import os
 import argparse
-import cv2
 import json
-import numpy as np
 import random
 import subprocess
 import sys
-import torch
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from ultralytics import YOLO
 
 # --- CONFIGURATION ---
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -59,7 +55,6 @@ def _discover_font_paths():
     return paths if paths else list(_FALLBACK_FONT_PATHS)
 
 
-FONT_PATHS = _discover_font_paths()
 FONT_SIZE = 16
 CANVAS_W, CANVAS_H = 800, 64
 DATASET_DIR = "ocr_dataset"
@@ -72,9 +67,9 @@ def eprint(*args, **kwargs):
 
 
 def _generate_ocr_sample(args):
-    i, split, img_dir, lbl_dir, fine_tune, debug = args
+    i, split, img_dir, lbl_dir, fine_tune, debug, font_paths = args
     font = None
-    for fp in random.sample(FONT_PATHS, k=len(FONT_PATHS)):
+    for fp in random.sample(font_paths, k=len(font_paths)):
         try:
             font = ImageFont.truetype(fp, FONT_SIZE)
             break
@@ -188,8 +183,31 @@ def _generate_ocr_sample(args):
         f.write("\n".join(labels))
 
 
+def generate_data(count=1000, split="train", fine_tune=False, font_paths=None):
+    print(f"Generating {count} samples for {split}...")
+    if font_paths is None:
+        font_paths = _discover_font_paths()
+    img_dir = os.path.join(DATASET_DIR, split, "images")
+    lbl_dir = os.path.join(DATASET_DIR, split, "labels")
+    os.makedirs(img_dir, exist_ok=True)
+    os.makedirs(lbl_dir, exist_ok=True)
+
+    debug = False
+    with ProcessPoolExecutor() as executor:
+        jobs = (
+            (i, split, img_dir, lbl_dir, fine_tune, debug, font_paths)
+            for i in range(count)
+        )
+        for _ in executor.map(_generate_ocr_sample, jobs):
+            pass
+
+
 class YOLO_OCR:
     def __init__(self, model_path=None):
+        import torch
+
+        from ultralytics import YOLO
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if model_path:
             if not os.path.exists(model_path):
@@ -201,18 +219,13 @@ class YOLO_OCR:
             self.fine_tune = False
 
     # --- PART 1: DATA GENERATION ---
-    def generate_data(self, count=1000, split="train"):
-        print(f"Generating {count} samples for {split}...")
-        img_dir = os.path.join(DATASET_DIR, split, "images")
-        lbl_dir = os.path.join(DATASET_DIR, split, "labels")
-        os.makedirs(img_dir, exist_ok=True)
-        os.makedirs(lbl_dir, exist_ok=True)
-
-        debug = False
-        with ProcessPoolExecutor() as executor:
-            jobs = ((i, split, img_dir, lbl_dir, self.fine_tune, debug) for i in range(count))
-            for _ in executor.map(_generate_ocr_sample, jobs):
-                pass
+    def generate_data(self, count=1000, split="train", font_paths=None):
+        generate_data(
+            count=count,
+            split=split,
+            fine_tune=self.fine_tune,
+            font_paths=font_paths,
+        )
 
     # --- PART 2: TRAINING ---
     def train(self, epochs=100, patience=30):
@@ -262,6 +275,10 @@ class YOLO_OCR:
 
     # --- PART 3: INFERENCE & DOCUMENT PROCESSING ---
     def process_document(self, image_path):
+        import cv2
+
+        import numpy as np
+
         img = cv2.imread(image_path)
         # Slightly boost contrast to account for screenshot color drift
         # alpha (1.2) = contrast, beta (0) = brightness
@@ -417,6 +434,12 @@ if __name__ == "__main__":
         default=30,
         help="Early-stopping patience in epochs (use with --train)",
     )
+    parser.add_argument(
+        "--font-path",
+        type=str,
+        default=None,
+        help="Use a single font file for synthetic data generation (e.g. Courier_New.ttf)",
+    )
     parser.add_argument("--predict", type=str, help="Path to image for inference")
     parser.add_argument(
         "--model",
@@ -427,20 +450,34 @@ if __name__ == "__main__":
     parser.add_argument("--resume", type=str, help="Training run number to resume from")
     args = parser.parse_args()
 
-    # Determine which model to load
+    font_paths = [args.font_path] if args.font_path else None
+
     m_path = args.model if os.path.exists(args.model) else None
     if m_path is None and args.resume is not None:
         m_path = f"runs/detect/train{args.resume}/weights/best.pt"
-    ocr = YOLO_OCR(m_path)
+    fine_tune = m_path is not None
 
     if args.generate:
-        ocr.generate_data(count=args.train_count, split="train")
-        ocr.generate_data(count=args.val_count, split="val")
+        generate_data(
+            count=args.train_count,
+            split="train",
+            fine_tune=fine_tune,
+            font_paths=font_paths,
+        )
+        generate_data(
+            count=args.val_count,
+            split="val",
+            fine_tune=fine_tune,
+            font_paths=font_paths,
+        )
 
-    if args.train:
-        ocr.train(epochs=args.epochs, patience=args.patience)
+    if args.train or args.predict:
+        ocr = YOLO_OCR(m_path)
 
-    if args.predict:
-        result = ocr.process_document(args.predict)
-        eprint("\n--- OCR RESULTS ---\n")
-        print(result)
+        if args.train:
+            ocr.train(epochs=args.epochs, patience=args.patience)
+
+        if args.predict:
+            result = ocr.process_document(args.predict)
+            eprint("\n--- OCR RESULTS ---\n")
+            print(result)

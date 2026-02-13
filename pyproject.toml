@@ -3,7 +3,7 @@ name = "cour"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.10.8",
     "opencv-contrib-python>=4.13.0.92",

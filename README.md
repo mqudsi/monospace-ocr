@@ -46,7 +46,13 @@ If `fc-list` is unavailable or returns no matches, `ocr.py` falls back to a smal
 #### Dataset generation
 
 ```bash
-python ocr.py --generate --train-count 20000 --val-count 2000
+uv run python ocr.py --generate --train-count 20000 --val-count 2000
+```
+
+To force a single font (useful for Courier-only fine-tuning):
+
+```bash
+uv run python ocr.py --generate --train-count 20000 --val-count 2000 --font-path /path/to/Courier_New.ttf
 ```
 
 Arguments:
@@ -61,13 +67,19 @@ Arguments:
 Quick sanity check:
 
 ```bash
-python ocr.py --train --epochs 2 --patience 1
+uv run python ocr.py --train --epochs 2 --patience 1
 ```
 
 Long run with early stopping:
 
 ```bash
-python ocr.py --train --epochs 300 --patience 30
+uv run python ocr.py --train --epochs 300 --patience 30
+```
+
+Fine-tune from an existing run (example: `train13`):
+
+```bash
+uv run python ocr.py --train --epochs 15 --patience 3 --model runs/detect/train13/weights/best.pt
 ```
 
 Arguments:
@@ -80,5 +92,5 @@ Arguments:
 #### Inference
 
 ```bash
-python ocr.py --predict /path/to/page.png --model runs/detect/train/weights/best.pt
+uv run python ocr.py --predict /path/to/page.png --model runs/detect/train/weights/best.pt
 ```
